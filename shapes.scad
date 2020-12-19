@@ -7,8 +7,14 @@
  * Licensed under Creative Commons
  */
 
+/*
+ * cyl_rounded
+ *
+ * rfn allows separate resolution for relieved edge
+ */
 module cyl_rounded(height, radius, redge, toponly=true, center=false,
-                   fa=$fa, fs=$fs, fn=$fn)
+                   fa=$fa, fs=$fs, fn=$fn,
+                   rfn=$fn)
 {
     $fa=fa;
     $fs=fs;
@@ -30,7 +36,7 @@ module cyl_rounded(height, radius, redge, toponly=true, center=false,
 
             rotate_extrude() {
                 translate([radius-redge, 0, 0])
-                    circle(r=redge);
+                    circle(r=redge, $fn=rfn);
             }
         }
     }
@@ -42,6 +48,20 @@ module cyl_shell(h, r, wall, center=false)
         cylinder(h=h, r=r, center=center);
         translate([0,0,center?0:-1])
         cylinder(h=h+2, r=r-wall, center=center);
+    }
+}
+
+// TODO: the wall thickness is wrong here
+// * needs to be adjusted for the slope
+// * overshoot for the subtracted part makes the angle wrong
+// * probably best to just render it as a polyhedron
+// is this already available in MCAD?
+module cyl_shell2(h, r1, r2, wall, center=false)
+{
+    difference() {
+        cylinder(h=h, r1=r1, r2=r2, center=center);
+        translate([0,0,center?0:-.01])
+        cylinder(h=h+.02, r1=r1-wall, r2=r2-wall, center=center);
     }
 }
 
@@ -130,7 +150,7 @@ module starcone_shell(h, r, wall, points, depth, twist)
 
     a1 = 360/points;
     a2 = a1/2;
-    slices = (h > twist ? h : twist)/ 2;
+    slices = (h > abs(twist) ? h : abs(twist))/ 2;
     zstep = h / slices;
     astep = -twist / slices;
     rstep = r / slices;
@@ -216,6 +236,126 @@ module starcone_shell(h, r, wall, points, depth, twist)
             //each[[i0, i3, i2], [i0, i1, i3], [i3, i4, i6], [i3, i1, i4]]
 
 /* */
+    ];
+
+    polyhedron(points=pts, faces=paths);
+}
+
+/*
+ * Cylinder shell version of star
+ *
+ * This doesn't generalize to the cone version above.
+ * Most notably, it does not taper the depth of the star points, and
+ * does not necessarily handle the convergence to a point gracefully.
+ *
+ * r1 - top
+ * r2 - bottom
+ *
+ * TODO: review simple cylinder behavior
+ * TODO: consider the rx = 0 case
+ */
+module starcyl_shell(h=-1, r=-1, r1=-1, r2=-1, wall, points, depth, twist)
+{
+    /* DIY extrude */
+
+    assert((r >= 0 && r1 == -1 && r2 == -1) || (r1 >= 0 && r2 >= 0));
+
+    a1 = 360/points;
+    a2 = a1/2;
+    slices = (h > abs(twist) ? h : abs(twist))/ 2;
+    zstep = h / slices;
+    astep = -twist / slices;
+
+    deltar = (r<0)? r2-r1 : r;
+    rbot = (r<0)? r2 : r;
+
+    rstep = deltar / slices;    // radius change per slice
+
+    hy = sqrt(deltar*deltar + h*h);     // hypotenuse: length of wall
+    xw = wall * hy / h;         // horz distance inner..outer
+    xd = depth * hy / h;        // horz depth
+
+    echo("a1: ", a1, "a2: ", a2, "slices: ", slices, "zstep: ", zstep, "astep: ", astep);
+
+    pts = [
+        for (zi = [0 : slices])
+            let (z = zi * zstep,                // slice
+                 a = zi * astep,                // twist offset
+                 rr1 = rbot - zi * rstep,       // radius at current slice
+                 rr2 = rr1 + xd,                // outer (point) radius
+                 rc = rr1 - xw)                 // inner wall
+            for (i = [0 : points - 1])          // 
+                let (ai = a + i*a1, ap = ai+a2,
+                    cosai=cos(ai), sinai=sin(ai),
+                    cosap=cos(ap), sinap=sin(ap))
+                each [
+                    [rr1*cosai, rr1*sinai, z],
+                    [rr2*cosap, rr2*sinap, z],
+                    rc > 0? ([rc*cosai, rc*sinai, z]):([0, 0, z]),
+                    rc > 0? ([rc*cosap, rc*sinap, z]):([0, 0, z])
+                ],
+    ];
+    //echo(pts);
+
+    // stitch points into paths
+
+    paths = [
+        // outer faces
+        for (zi = [0 : slices-1])
+            let (b0 = zi * 4 * points,  // base of current slice
+                 b1 = b0 + 4 * points)  // base of next slice
+            for (i = [0 : points-1])
+                let (i0=4*i, i1=i0+1,
+                     i4=(i0+4) % (4*points))    // wrap around at end of ring
+                each [
+                    //[b0+i0, b0+i1, b1+i1, b1+i0, b0+i0],
+                    //[b1+i1, b0+i1, b0+i4, b1+i4, b1+i1]
+                    // preferred order:
+                    [b0+i0, b1+i0, b1+i1, b0+i1, b0+i0],
+                    [b1+i1, b1+i4, b0+i4, b0+i1, b1+i1]
+                ]
+        ,
+
+        // interior faces
+        for (zi = [0 : slices-1])
+            let (b0 = zi * 4 * points,
+                 b1 = b0 + 4 * points)
+            for (i = [0 : points-1])
+                let (i0=4*i, i2=i0+2, i3=i0+3,
+                     i4=(i0+4) % (4*points), i6=i4+2)
+                if (pts[b0+i2][0] != 0 || pts[b0+i2][1] != 0)
+                    if (pts[b1+i2][0] == 0 && pts[b1+i2][1] == 0) 
+                        // close the top
+                        each [
+                            [b1+i2, b0+i3, b0+i2],
+                            [b1+i2, b0+i6, b0+i3]
+                        ]
+                    else
+                        each [
+                            //[b0+i2, b1+i2, b1+i3, b0+i3, b0+i2],
+                            //[b0+i3, b1+i3, b1+i6, b0+i6, b0+i3]
+                            // preferred order:
+                            [b0+i2, b0+i3, b1+i3, b1+i2, b0+i2],
+                            [b0+i3, b0+i6, b1+i6, b1+i3, b0+i3]
+                        ]
+        ,
+
+        // bottom wall
+        for (i = [ 0 : points-1 ])
+            let (i0=4*i, i1=i0+1, i2=i0+2, i3=i0+3,
+                 i4=(i0+4) % (4*points), i6=i4+2)
+            //each[[i0, i2, i3], [i0, i3, i1], [i3, i6, i4], [i3, i4, i1]]
+            // preferred order:
+            each[[i0, i3, i2], [i0, i1, i3], [i3, i4, i6], [i3, i1, i4]]
+        ,
+
+        // top wall
+        for (i = [ 0 : points-1 ])
+            let (i0=slices*4*points + 4*i, i1=i0+1, i2=i0+2, i3=i0+3,
+                 i4=(i0+4) - (i == (points-1)?(4*points):0), i6=i4+2)
+            //each[[i0, i3, i2], [i0, i1, i3], [i3, i4, i6], [i3, i1, i4]]
+            // preferred order:
+            each[[i0, i2, i3], [i0, i3, i1], [i3, i6, i4], [i3, i4, i1]]
     ];
 
     polyhedron(points=pts, faces=paths);
