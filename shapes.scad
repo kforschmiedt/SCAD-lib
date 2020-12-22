@@ -34,6 +34,7 @@ module cyl_rounded(height, radius, redge, toponly=true, center=false,
             translate([0, 0, -redge+.01])
                 cylinder(h=redge, r=radius, center=false);
 
+            rotate([0,0,180])
             rotate_extrude() {
                 translate([radius-redge, 0, 0])
                     circle(r=redge, $fn=rfn);
@@ -659,3 +660,25 @@ module cyl_weave(r, h, wwall, wscale, wcycles, wgap, backfill=false, fy=.25)
     }
 }
 
+/*
+ * paracube - parallelogram solid
+ *
+ * size - [x, y, z] bounding box, not sides
+ * angle -
+ */
+module paracube(size, angle, center=false)
+{
+    // fit a parallelogram inside of a rectangle:
+    assert(abs(angle) < 90);
+    x = size[0]; y = size[1]; z = size[2];
+    ydec = x * tan(angle);
+    ylen = y - ydec;
+
+    points = (angle < 0)?
+            [[0, -ydec], [0, y], [x, y + ydec], [x, 0], [0, -ydec]] :
+            [[0, 0], [0, y - ydec], [x, y], [x, ydec], [0, 0]];
+
+    translate(center? -size/2 : [0,0,0])
+    linear_extrude(z)
+        polygon(points);
+}
