@@ -1,3 +1,8 @@
+/*
+ * grommet.scad - reinforced hole through a wall
+ *
+ * (C)Copyright 2020 Kent Forschmiedt, All Rights Reserved
+ */
 
 /*
  * grommet - Put a screw grommet in something.

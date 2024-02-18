@@ -1,4 +1,8 @@
-
+/*
+ * fillet.scad - strengthen a wall corner
+ *
+ * (C)Copyright 2020 Kent Forschmiedt, All Rights Reserved
+ */
 
 module base_fillet(r1, r2, arc, h)
 {

@@ -3,7 +3,6 @@
  * Various gem shapes
  *
  * (C)Copyright 2020 Kent Forschmiedt, All Rights Reserved
- * Licensed under Creative Commons
  */
 
 module gem(sides, ldiv, r)
